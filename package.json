@@ -1,0 +1,24 @@
+{
+	"name": "@steve02081504/virtual-console",
+	"version": "0.0.0",
+	"description": "A virtual console for capturing and manipulating terminal output.",
+	"main": "main.mjs",
+	"type": "module",
+	"keywords": [
+		"console",
+		"virtual",
+		"capture",
+		"terminal",
+		"output"
+	],
+	"author": "steve02081504",
+	"bugs": {
+		"url": "https://github.com/steve02081504/virtual-console/issues"
+	},
+	"homepage": "https://github.com/steve02081504/virtual-console#readme",
+	"dependencies": {
+		"ansi-escapes": "latest",
+		"full-proxy": "latest",
+		"supports-ansi": "latest"
+	}
+}
