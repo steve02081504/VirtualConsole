@@ -6,6 +6,10 @@ import supportsAnsi from 'supports-ansi'
 import { FullProxy } from 'full-proxy'
 
 export const consoleAsyncStorage = new AsyncLocalStorage()
+const cleanupRegistry = new FinalizationRegistry(cleanupToken => {
+	const { stream, listener } = cleanupToken
+	stream.off?.('resize', listener)
+})
 
 /**
  * 创建一个虚拟控制台，用于捕获输出，同时可以选择性地将输出传递给真实的控制台。
@@ -100,9 +104,18 @@ export class VirtualConsole extends Console {
 					hasColors: { get: () => targetStream.hasColors.bind(targetStream), configurable: true, enumerable: true },
 				})
 
-				targetStream.on?.('resize', () => {
-					virtualStream.emit('resize')
-				})
+				const virtualStreamRef = new WeakRef(virtualStream)
+
+				const resizeListener = () => {
+					virtualStreamRef.deref()?.emit('resize')
+				}
+
+				targetStream.on?.('resize', resizeListener)
+
+				cleanupRegistry.register(this, {
+					stream: targetStream,
+					listener: resizeListener,
+				}, this)
 			}
 
 			return virtualStream
