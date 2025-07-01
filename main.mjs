@@ -141,7 +141,7 @@ export class VirtualConsole extends Console {
 }
 
 const originalConsole = globalThis.console
-const defaultConsole = new VirtualConsole({ base_console: originalConsole, recordOutput: false, realConsoleOutput: true })
+export const defaultConsole = new VirtualConsole({ base_console: originalConsole, recordOutput: false, realConsoleOutput: true })
 /** @type {() => VirtualConsole} */
 let consoleReflect = () => consoleAsyncStorage.getStore() ?? defaultConsole
 /** @type {(value: VirtualConsole) => void} */
