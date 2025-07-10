@@ -90,8 +90,9 @@ export class VirtualConsole extends Console {
 					if (this.options.recordOutput)
 						this.outputs += chunk.toString()
 					if (this.options.realConsoleOutput)
-						targetStream.write(chunk, encoding)
-					callback()
+						targetStream.write(chunk, encoding, callback)
+					else
+						callback()
 				},
 			})
 
@@ -121,8 +122,8 @@ export class VirtualConsole extends Console {
 			return virtualStream
 		}
 
-		this._stdout = createVirtualStream(this.#base_console._stdout || process.stdout)
-		this._stderr = createVirtualStream(this.#base_console._stderr || process.stderr)
+		this._stdout = createVirtualStream(this.#base_console?._stdout || process.stdout)
+		this._stderr = createVirtualStream(this.#base_console?._stderr || process.stderr)
 	}
 
 	/**
