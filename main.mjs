@@ -156,6 +156,7 @@ export class VirtualConsole extends Console {
 
 const originalConsole = globalThis.console
 export const defaultConsole = new VirtualConsole({ base_console: originalConsole, recordOutput: false, realConsoleOutput: true })
+export const globalConsoleAdditionalProperties = {}
 /** @type {() => VirtualConsole} */
 let consoleReflect = () => consoleAsyncStorage.getStore() ?? defaultConsole
 /** @type {(value: VirtualConsole) => void} */
@@ -181,4 +182,11 @@ export function getGlobalConsoleReflect() {
 		ReflectRun: consoleReflectRun
 	}
 }
-export const console = globalThis.console = new FullProxy(() => consoleReflect())
+export const console = globalThis.console = new FullProxy(() => Object.assign({}, globalConsoleAdditionalProperties, consoleReflect()), {
+	set: (target, property, value) => {
+		target = consoleReflect()
+		if (property in target) return Reflect.set(target, property, value)
+		globalConsoleAdditionalProperties[property] = value
+		return true
+	}
+})

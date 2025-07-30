@@ -1,7 +1,6 @@
 # Virtual Console
 
 [![npm version](https://img.shields.io/npm/v/@steve02081504/virtual-console.svg)](https://www.npmjs.com/package/@steve02081504/virtual-console)
-[![GitHub license](https://img.shields.io/github/license/steve02081504/virtual-console)](https://github.com/steve02081504/virtual-console/blob/main/LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/steve02081504/virtual-console)](https://github.com/steve02081504/virtual-console/issues)
 
 A powerful and flexible virtual console for Node.js that allows you to capture, manipulate, and redirect terminal output. Built with modern asynchronous contexts (`AsyncLocalStorage`) for robust, concurrency-safe operations.
@@ -15,27 +14,32 @@ A powerful and flexible virtual console for Node.js that allows you to capture, 
 
 ---
 
-## Core Concept: The Global Console Proxy
+## How It Works: The Global Console Proxy
 
-**This library is designed for zero-refactoring integration.** Upon import, it replaces `globalThis.console` with a smart proxy. Here’s how it works:
+**This library is designed for zero-refactoring integration.** Upon import, it replaces `globalThis.console` with a smart proxy that is aware of the asynchronous execution context.
 
-1. **Default Behavior (No-op):** By default, the proxy simply forwards all console calls (`console.log`, etc.) to the original, real console. It doesn't record or change anything. This makes the library safe to include anywhere without side effects.
+1. **The Proxy:** The new `console` object is a proxy. When you call a method like `console.log()`, the proxy intercepts the call.
 
-2. **Activation via `hookAsyncContext`:** To capture or manipulate output, you create a `new VirtualConsole()` instance and activate it for a specific block of code using `vc.hookAsyncContext(yourFunction)`.
+2. **`AsyncLocalStorage` for Isolation:** The proxy uses `AsyncLocalStorage` to look up the currently active `VirtualConsole` instance for the current async operation.
 
-3. **Context-Aware Routing:** Inside the `hookAsyncContext` block, the proxy detects the active `VirtualConsole` instance and routes all `console` calls to it. This allows your instance to capture output, handle stateful methods like `freshLine`, or apply custom logic, all while being completely isolated from other asynchronous operations.
+3. **Context-Aware Routing:**
+    - If you have activated a `VirtualConsole` instance using `vc.hookAsyncContext()`, the proxy finds your instance and routes all `console` calls to it. This allows your instance to capture output, handle stateful methods like `freshLine`, or apply custom logic.
+    - If no instance is active for the current context, the proxy forwards the call to a default, passthrough console that simply prints to the original terminal, just like the real `console` would.
 
-This architecture means you **don't need to pass console instances around**. Just keep using the global `console` as you always have, and wrap the code you want to monitor.
+This architecture means you **don't need to refactor your code to pass console instances around**. Just keep using the global `console` as you always have, and wrap the code you want to monitor in a hook.
+
+**Enhanced Compatibility:** The proxy is designed to be a good citizen. If other libraries or your own code assign custom properties to the global `console` object (e.g., `console.myLogger = ...`), these properties are preserved and remain accessible.
 
 ## Features
 
 - **Zero-Configuration Capturing:** Capture output from any module without changing its source code.
 - **Concurrency-Safe Isolation:** Uses `AsyncLocalStorage` to guarantee that output from concurrent operations is captured independently and correctly.
-- **Output Recording:** Captures all `stdout` and `stderr` output to a string property for inspection.
+- **Output Recording:** Captures all `stdout` and `stderr` output to a string property for easy inspection.
 - **Real Console Passthrough:** Optionally, print to the actual console while also capturing.
-- **TTY Emulation:** Behaves like a real TTY, inheriting properties like `columns`, `rows`, and color support.
-- **Updatable Lines (`freshLine`)**: A stateful method for creating overwritable lines, perfect for progress indicators.
-- **Extensible:** Provide a custom base console, define a dedicated `Error` handler, and more.
+- **Full TTY Emulation:** Behaves like a real TTY, inheriting properties like `columns`, `rows`, and color support from the base console. It also respects terminal resize events.
+- **Updatable Lines (`freshLine`)**: A stateful method for creating overwritable lines, perfect for progress indicators. Requires a TTY with ANSI support.
+- **Custom Error Handling:** Provide a dedicated handler for `Error` objects passed to `console.error`.
+- **Extensible:** Can be integrated with other async-context-aware libraries via `setGlobalConsoleReflect`.
 
 ## Installation
 
@@ -107,29 +111,31 @@ await Promise.all([
 console.log('All tasks finished!');
 ```
 
-### Use Case: Activating a Hook for an Entire Async Flow
+### Use Case: Custom Error Handling
 
-You can call `hookAsyncContext()` without a function to activate an instance for the *rest of the current asynchronous context*. This is useful in frameworks like Express or Koa middleware.
+You can provide a dedicated `error_handler` to process `Error` objects passed to `console.error`. This is useful for integrating with logging services or custom error-reporting frameworks.
 
 ```javascript
-const vc = new VirtualConsole({ realConsoleOutput: true });
+import { VirtualConsole } from '@steve02081504/virtual-console';
 
-async function middleware(next) {
-  console.log('Middleware: Activating virtual console for this request.');
-  // Activate `vc` for the rest of this async flow
-  vc.hookAsyncContext();
-  
-  // Now, `next()` and any subsequent code in this request's
-  // async chain will have its console output handled by `vc`.
-  await next();
-}
+const reportedErrors = [];
 
-async function handler() {
-  console.log('Handler: This output is being captured.');
-}
+const vc = new VirtualConsole({
+  // This handler is called ONLY when a single Error object is passed to console.error
+  error_handler: (err) => {
+    console.log(`Reporting error: "${err.message}"`);
+    reportedErrors.push(err);
+  },
+  realConsoleOutput: true,
+});
 
-// Simulate a request
-await middleware(handler);
+await vc.hookAsyncContext(() => {
+  console.error(new Error('Something went wrong!')); // Handled by error_handler
+  console.error('A regular error message.'); // Not an Error object, logged normally
+});
+
+// Verify the custom handler was called
+console.log('Reported errors:', reportedErrors.map(e => e.message));
 ```
 
 ## API Reference
@@ -141,15 +147,15 @@ Creates a new `VirtualConsole` instance.
 - `options` `<object>`
   - `realConsoleOutput` `<boolean>`: If `true`, output is also sent to the base console. **Default:** `false`.
   - `recordOutput` `<boolean>`: If `true`, output is captured in the `outputs` property. **Default:** `true`.
-  - `base_console` `<Console>`: The console instance for passthrough. **Default:** The original `global.console`.
-  - `error_handler` `<function(Error): void>`: A dedicated handler for `Error` objects passed to `console.error`.
-  - `supportsAnsi` `<boolean>`: Manually set ANSI support. **Default:** Inherited from `base_console`.
+  - `base_console` `<Console>`: The console instance for passthrough. **Default:** The original `global.console` before it was patched.
+  - `error_handler` `<function(Error): void>`: A dedicated handler for `Error` objects passed to `console.error`. If `console.error` is called with a single argument that is an `instanceof Error`, this handler is invoked instead of the standard `console.error` logic. **Default:** `null`.
+  - `supportsAnsi` `<boolean>`: Manually set ANSI support, which affects `freshLine`. **Default:** Inherited from `base_console`'s stream, or the result of the `supports-ansi` package.
 
 ### `virtualConsole.hookAsyncContext(fn?)`
 
 Hooks the virtual console into an asynchronous context.
 
-- **`hookAsyncContext(fn)`**: Runs `fn` in a new context. All `console` calls within `fn` (and any functions it `await`s) are routed to this instance. Returns the result of `fn`.
+- **`hookAsyncContext(fn)`**: Runs `fn` in a new context. All `console` calls within `fn` (and any functions it `await`s) are routed to this instance. Returns a `Promise` that resolves with the return value of `fn`.
 - **`hookAsyncContext()`**: Activates the instance for the *current* asynchronous context. Useful for "activating" a console and leaving it active for the remainder of an async flow (e.g., within middleware).
 
 ### `virtualConsole.outputs`
@@ -162,7 +168,7 @@ A string containing all captured `stdout` and `stderr` output.
 
 *Note: This stateful method is available on the global `console` object but only works as intended inside a `hookAsyncContext`.*
 
-Prints a line. If the previously printed line (within the same hook) had the same `id`, it overwrites the previous line.
+Prints a line. If the previously printed line (within the same hook) had the same `id`, it overwrites the previous line using ANSI escape codes. This requires a TTY environment.
 
 - `id` `<string>`: A unique identifier for the overwritable line.
 - `...args` `<any>`: The content to print, same as `console.log()`.
@@ -171,10 +177,14 @@ Prints a line. If the previously printed line (within the same hook) had the sam
 
 Clears the captured `outputs` string. If `realConsoleOutput` is enabled, it also attempts to call `clear()` on the base console.
 
-### For Library Authors: `setGlobalConsoleReflect(...)`
+### `virtualConsole.error(...args)`
 
-`VirtualConsole` exposes its `AsyncLocalStorage`-based reflection mechanism. If you are building another library that manages async context, you can use `setGlobalConsoleReflect` to integrate `VirtualConsole`'s logic into your own context manager, preventing conflicts. See the source code for details.
+The standard `console.error` method. However, if an `error_handler` is configured in the constructor, and `error()` is called with a single argument that is an `instanceof Error`, the handler will be invoked with the error object.
+
+## For Library Authors: `setGlobalConsoleReflect(...)`
+
+`VirtualConsole` exposes its `AsyncLocalStorage`-based reflection mechanism. If you are building another library that also manages async context (e.g., a custom APM or transaction tracer), you can use `setGlobalConsoleReflect` to integrate `VirtualConsole`'s logic into your own context manager. This prevents the two libraries from fighting over control of the async context. See the source code for details on its function signature.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/steve02081504/VirtualConsole).
+Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/steve02081504/virtual-console).
