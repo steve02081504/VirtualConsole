@@ -73,6 +73,15 @@ export class VirtualConsole extends Console {
 		this.freshLine = this.freshLine.bind(this)
 		this.error = this.error.bind(this)
 		this.clear = this.clear.bind(this)
+		for (const method of ['log', 'info', 'warn', 'debug', 'error']) {
+			if (!this[method]) continue
+			const originalMethod = this[method]
+			this[method] = (...args) => {
+				if (!this.options.realConsoleOutput || this.options.recordOutput) return originalMethod.apply(this, args)
+				this.#loggedFreshLineId = null
+				return this.#base_console[method](...args)
+			}
+		}
 	}
 
 	get base_console() {
