@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Console } from 'node:console'
+import process from 'node:process'
 import { Writable } from 'node:stream'
+
 import ansiEscapes from 'ansi-escapes'
-import supportsAnsi from 'supports-ansi'
 import { FullProxy } from 'full-proxy'
+import supportsAnsi from 'supports-ansi'
 
 export const consoleAsyncStorage = new AsyncLocalStorage()
 const cleanupRegistry = new FinalizationRegistry(cleanupToken => {
@@ -71,12 +73,12 @@ export class VirtualConsole extends Console {
 			...options,
 		}
 		this.freshLine = this.freshLine.bind(this)
-		this.error = this.error.bind(this)
 		this.clear = this.clear.bind(this)
 		for (const method of ['log', 'info', 'warn', 'debug', 'error']) {
 			if (!this[method]) continue
 			const originalMethod = this[method]
 			this[method] = (...args) => {
+				if (method == 'error' && this.options.error_handler && args.length === 1 && args[0] instanceof Error) return this.options.error_handler(args[0])
 				if (!this.options.realConsoleOutput || this.options.recordOutput) return originalMethod.apply(this, args)
 				this.#loggedFreshLineId = null
 				return this.#base_console[method](...args)
@@ -147,12 +149,6 @@ export class VirtualConsole extends Console {
 
 		this.log(...args)
 		this.#loggedFreshLineId = id
-	}
-
-	error(...args) {
-		if (this.options.error_handler && args.length === 1 && args[0] instanceof Error)
-			return this.options.error_handler(args[0])
-		super.error(...args)
 	}
 
 	clear() {
